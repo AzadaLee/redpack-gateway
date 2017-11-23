@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: gateway
+server:
+  port: 8080
+hystrix:
+  command:
+    default:
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 60000
+        timeout:
+          enabled: false
+ribbon:
+  ConnectTimeout: 3000
+  ReadTimeout: 60000
+zuul:
+  retryable: true
+  routes:
+    auth:
+      stripPrefix: false
+    business:
+      stripPrefix: false
+      path: /**
+path:
+  bypassSignature:
+    - /payment/alipayNotify
+  pattern:
+    ^/crm/.*$: crm
+    ^/(?!crm).*$: customer
+  open:
+    #  select '    - ' || url as open_url from api_t_interface i, api_t_category c where i.authorize = 0 and i.category_id = c.id and c.project_id = '42dcfd57-3133-4803-96d1-bd35c58108f2' order by url;
+    - /advertisement/click
+    - /advertisement/detail
+    - /advertisement/detailByRedpackId
+    - /advertisement/findStartPageAdvertisement
+    - /advertisement/share
+    - /appVersion/getCurrentVersion
+    - /auth/login
+    - /auth/logout
+    - /customer/forgetPassword
+    - /customer/homePage
+    - /customer/register
+    - /customer/sendSMS
+    - /redpack/list
+    - /customer/findInfoById
+    - /redpack/nextRedpack
+    - /dic/location
+    - /dic/select
+    - /crm/getResourceDomain
+    - /payment/alipayNotify
+auth:
+  ribbon:
+    listOfServers: localhost:8002
+business:
+  ribbon:
+    listOfServers: localhost:8084

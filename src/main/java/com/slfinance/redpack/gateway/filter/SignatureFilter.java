@@ -1,0 +1,112 @@
+package com.slfinance.redpack.gateway.filter;
+
+import com.netflix.zuul.context.RequestContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.util.DigestUtils;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartResolver;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.util.Date;
+import java.util.Scanner;
+
+/**
+ * Created by Sean on 2015/8/20.
+ */
+@Component
+public class SignatureFilter extends PathFilter {
+
+    protected static final long VALID_TIME = 10 * 60 * 1000; // 时间戳有效期
+    protected static final String HEADER_TIMESTAMP = "t";
+    protected static final String HEADER_VERSION = "v";
+    protected static final String HEADER_SIGN = "sign";
+    private static final Charset UTF8 = Charset.forName("UTF-8");
+
+    @Autowired
+    private MultipartResolver multipartResolver;
+
+    @Override
+    public String filterType() {
+        return "pre";
+    }
+
+    @Override
+    public int filterOrder() {
+        return 6;
+    }
+
+    protected boolean isBypassSignature() {
+        RequestContext ctx = RequestContext.getCurrentContext();
+        String uri = (String) ctx.get("requestURI");
+        return pathMatch(pathProperites.getBypassSignature(), uri);
+    }
+
+    protected boolean isMultipart() {
+        RequestContext ctx = RequestContext.getCurrentContext();
+        HttpServletRequest req = ctx.getRequest();
+        return multipartResolver.isMultipart(req);
+    }
+
+    @Override
+    public boolean shouldFilter() {
+        return !isMultipart() && !isBypassSignature();
+    }
+
+    @Override
+    public Object run() {
+        RequestContext ctx = RequestContext.getCurrentContext();
+        HttpServletRequest req = ctx.getRequest();
+        String method = req.getMethod();
+        if (!"POST".equals(method)) {
+            setError(ctx, HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Only allow POST method");
+            return null;
+        }
+        Scanner s;
+        try {
+            s = new Scanner(req.getInputStream(), "UTF-8").useDelimiter("\\A");
+        } catch (IOException e) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Can not parse request input");
+            return null;
+        }
+        if (!s.hasNext()) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Request body is empty");
+            return null;
+        }
+        String timestamp = req.getHeader(HEADER_TIMESTAMP);
+        if (StringUtils.isEmpty(timestamp)) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Timestamp is missing");
+            return null;
+        }
+        long ts = Long.parseLong(timestamp);
+        if (Math.abs(new Date().getTime() - ts) > VALID_TIME) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Invalid timestamp");
+            return null;
+        }
+        String version = req.getHeader(HEADER_VERSION);
+        if (StringUtils.isEmpty(version)) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Version is missing");
+            return null;
+        }
+        String sign = req.getHeader(HEADER_SIGN);
+        if (StringUtils.isEmpty(sign)) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Signature is missing");
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(s.next());
+        sb.append(timestamp);
+        sb = new StringBuilder(DigestUtils.md5DigestAsHex(sb.toString().getBytes(UTF8)));
+        sb.append(version);
+        String check = DigestUtils.md5DigestAsHex(sb.toString().getBytes(UTF8));
+        if (!sign.equalsIgnoreCase(check)) {
+            setError(ctx, HttpServletResponse.SC_BAD_REQUEST, "Invalid Signature");
+            return null;
+        }
+        return null;
+    }
+
+}
